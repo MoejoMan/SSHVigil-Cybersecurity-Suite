@@ -3,6 +3,7 @@ import sys
 import os
 import csv
 import shutil
+import argparse
 import tkinter as tk
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -319,11 +320,17 @@ class BruteForceDetector:
         return all_results  
 
 def main():
+    # CLI flags for non-interactive runs
+    argp = argparse.ArgumentParser(description="SSH Brute Force Log Analyzer")
+    argp.add_argument("--log-file", dest="log_file", help="Path to auth/secure log file")
+    argp.add_argument("--summary-limit", dest="summary_limit", type=int, help="Max rows to show in terminal summary")
+    args = argp.parse_args()
     print("SSH Brute Force Log Analyzer")
     print("=" * 40)
     tk.Tk().withdraw()
 
-    log_path = filedialog.askopenfilename(
+    # If --log-file is provided, use it; otherwise open a file dialog
+    log_path = args.log_file if args.log_file else filedialog.askopenfilename(
         title="Select your auth.log file",
         filetypes=[("Log files", "*.log"), ("All files", "*.*")]
     )
@@ -360,12 +367,15 @@ def main():
     # Initialize config, parser and detector
     config = Config()
     parser = SSHLogParser()
+    # Allow CLI override of summary_limit
+    summary_limit_val = args.summary_limit if args.summary_limit else config["summary_limit"]
+
     detector = BruteForceDetector(
         max_attempts=config["max_attempts"],
         time_window_minutes=config["time_window_minutes"],
         block_threshold=config["block_threshold"],
         monitor_threshold=config["monitor_threshold"],
-        summary_limit=config["summary_limit"],
+        summary_limit=summary_limit_val,
         verbose_limit=config["verbose_limit"]
     )
     # Apply color setting from config unless NO_COLOR env is set

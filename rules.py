@@ -29,5 +29,10 @@ PATTERNS = [
 		'regex': re.compile(r"Accepted publickey for (?P<username>\S+) from (?P<ip>[0-9a-fA-F:.]+)"),
 		'success': True,
 	},
+	{
+		'name': 'accepted_keyboard_interactive',
+		'regex': re.compile(r"Accepted keyboard-interactive(?:/pam)? for (?P<username>\S+) from (?P<ip>[0-9a-fA-F:.]+)"),
+		'success': True,
+	},
 ]
 
