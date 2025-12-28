@@ -15,6 +15,7 @@ import os
 import csv
 import shutil
 import argparse
+import hashlib
 from collections import defaultdict
 from datetime import datetime, timedelta
 from parser import SSHLogParser
@@ -421,6 +422,50 @@ class BruteForceDetector:
         
         return all_results  
 
+def check_pid_lock(blocklist_path):
+    """Check if another analyzer instance is using this blocklist."""
+    # Create unique lock name based on blocklist path
+    lock_hash = hashlib.md5(blocklist_path.encode()).hexdigest()[:8]
+    pid_file = f"/tmp/ssh-analyzer-{lock_hash}.pid"
+    
+    if os.path.exists(pid_file):
+        with open(pid_file, 'r') as f:
+            try:
+                pid = int(f.read().strip())
+                # Check if process is still running
+                os.kill(pid, 0)  # Doesn't kill, just checks if PID exists
+                return pid_file, pid  # Lock is active
+            except (OSError, ValueError):
+                # Stale lock file, clean it up
+                os.remove(pid_file)
+    return pid_file, None
+
+def create_pid_lock(pid_file):
+    """Create PID lock file."""
+    with open(pid_file, 'w') as f:
+        f.write(str(os.getpid()))
+
+def remove_pid_lock(pid_file):
+    """Remove PID lock file on exit."""
+    try:
+        if os.path.exists(pid_file):
+            os.remove(pid_file)
+    except Exception:
+        pass
+
+def load_existing_blocklist(blocklist_path):
+    """Load existing IPs from blocklist file."""
+    ips = set()
+    try:
+        with open(blocklist_path, 'r') as f:
+            for line in f:
+                ip = line.strip()
+                if ip:
+                    ips.add(ip)
+    except FileNotFoundError:
+        pass
+    return ips
+
 def main():
     """
     Entry point: parse CLI args, read the log file, run analysis, and print
@@ -522,6 +567,42 @@ def main():
 
     # Live mode: follow file and periodically refresh summary
     if args.live:
+        # Check for PID lock if blocklist is specified
+        pid_file = None
+        if args.export_blocklist:
+            pid_file, existing_pid = check_pid_lock(args.export_blocklist)
+            if existing_pid:
+                print(f"\n⚠ Error: Another analyzer instance (PID {existing_pid}) is already using this blocklist.")
+                print(f"   Blocklist: {args.export_blocklist}")
+                print(f"   Stop the other instance first, or use a different blocklist path.")
+                sys.exit(1)
+            
+            # Check if blocklist exists and offer resume/clear
+            if os.path.exists(args.export_blocklist):
+                existing_ips = load_existing_blocklist(args.export_blocklist)
+                if existing_ips:
+                    print(f"\n⚠ Found existing blocklist with {len(existing_ips)} IPs: {args.export_blocklist}")
+                    print("   [R]esume and append to it")
+                    print("   [C]lear and start fresh")
+                    print("   [A]bort")
+                    choice = input("Choice (R/C/A): ").strip().upper()
+                    if choice == 'A':
+                        print("Aborted.")
+                        sys.exit(0)
+                    elif choice == 'C':
+                        os.remove(args.export_blocklist)
+                        print("Blocklist cleared.")
+                    elif choice == 'R':
+                        # Load existing IPs into detector's tracking set
+                        detector.written_ips = existing_ips
+                        print(f"Resuming with {len(existing_ips)} existing IPs.")
+                    else:
+                        print("Invalid choice. Aborting.")
+                        sys.exit(1)
+            
+            # Create PID lock
+            create_pid_lock(pid_file)
+        
         print("\nLive mode: following log for new entries...")
         # Apply presets
         preset_filter = None
@@ -575,6 +656,10 @@ def main():
         except KeyboardInterrupt:
             print("\nStopping live mode. Final summary:")
             detector.analyze(verbose=False, export_csv=None, filter_severity=filter_sev, compact=compact_mode, live_mode=True, export_blocklist=args.export_blocklist, blocklist_threshold=args.blocklist_threshold)
+        finally:
+            # Clean up PID lock
+            if pid_file:
+                remove_pid_lock(pid_file)
         return
 
     # Batch mode: parse the log file
