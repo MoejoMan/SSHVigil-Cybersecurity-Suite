@@ -1,4 +1,6 @@
-# Cybersecurity Suite
+# Tripwire
+
+**Lightweight security threat detection and defense**
 
 SSH Brute Force Log Analyzer that parses system authentication logs, aggregates attempts by IP, classifies threat levels, and prints a concise summary with optional detailed breakdown. Full results can be exported to CSV.
 

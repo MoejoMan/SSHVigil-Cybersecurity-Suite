@@ -1,13 +1,16 @@
 """
-SSH Brute Force Analysis CLI.
+Tripwire - Lightweight Security Threat Detection
 
-This script parses SSH authentication logs, aggregates login attempts by IP,
+SSH Brute Force Analysis Module
+
+Parses SSH authentication logs, aggregates login attempts by IP,
 classifies threat levels, and prints a concise summary and optional detailed
-breakdown. It can export full results to CSV for further analysis.
+breakdown. Supports fail2ban integration and live monitoring.
 
 Usage:
 - Non-interactive: provide a path with --log-file
 - Interactive: if no path is provided, a file picker will open
+- Live mode: --live flag enables real-time monitoring
 """
 import re
 import sys
@@ -473,7 +476,7 @@ def main():
     """
     # CLI flags for non-interactive runs
     argp = argparse.ArgumentParser(
-        description="SSH Brute Force Log Analyzer",
+        description="Tripwire - SSH Brute Force Detection & Defense",
         epilog="Examples:\n  python3 main.py --log-file /var/log/auth.log --live -f HIGH --compact --refresh 10\n  python3 main.py --log-file /var/log/auth.log --live --mode soc\n  python3 main.py --log-file /var/log/auth.log --live --follow-start --summary-limit 10\n  python3 main.py --log-file /var/log/auth.log --live --mode verbose\n"
     )
     argp.add_argument("--log-file", dest="log_file", help="Path to auth/secure log file")
@@ -490,7 +493,7 @@ def main():
     argp.add_argument("--export-blocklist", dest="export_blocklist", help="Export IPs to blocklist file (one per line) for iptables/fail2ban")
     argp.add_argument("--blocklist-threshold", dest="blocklist_threshold", choices=['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'], default='HIGH', help="Minimum severity for blocklist (default: HIGH)")
     args = argp.parse_args()
-    print("SSH Brute Force Log Analyzer")
+    print("Tripwire - SSH Brute Force Analyzer")
     print("=" * 40)
     
     # Only import tkinter and show GUI if not in live mode and no log-file provided
