@@ -144,13 +144,16 @@ class BruteForceDetector:
             return f"{hours}h {minutes}m {seconds}s"
         return f"{minutes}m {seconds}s"
 
-    def analyze(self, verbose=False, export_csv=None):
+    def analyze(self, verbose=False, export_csv=None, filter_severity=None, compact=False, live_mode=False):
         """
         Aggregate attempts, compute severity, and render summaries.
 
         Args:
         - verbose: If True, include a per-IP detailed breakdown.
         - export_csv: Optional path to export the full results table.
+        - filter_severity: Only show threats at or above this level (CRITICAL/HIGH/MEDIUM/LOW).
+        - compact: Skip event summaries, show only threat table.
+        - live_mode: Suppress pagination messages for continuous monitoring.
 
         Returns:
         - List of dict rows with keys: IP, Attempts, Attack_Rate, Severity,
@@ -259,48 +262,56 @@ class BruteForceDetector:
             print("No parsed attempts found.")
 
         # Compact event summaries to keep output concise
-        print("\n" + "=" * line_width)
-        print(self._color("EVENT SUMMARIES", bold=True))
-        print("=" * line_width)
-        
-        # Invalid user summary (top N by count)
-        invalid_counts = defaultdict(int)
-        for ip, attempts in self.attempts_by_ip.items():
-            for att in attempts:
-                if att.get('event') == 'invalid_user':
-                    invalid_counts[ip] += 1
-        if invalid_counts:
-            top_invalid = sorted(invalid_counts.items(), key=lambda x: x[1], reverse=True)[:max(1, self.summary_limit//2)]
-            print(self._color(f"Invalid user attempts (top {len(top_invalid)}):", fg='cyan', bold=True))
-            for ip, cnt in top_invalid:
-                print(f"  {ip:<18} {cnt:>7,} events")
-        else:
-            print("No invalid user events detected.")
+        if not compact:
+            print("\n" + "=" * line_width)
+            print(self._color("EVENT SUMMARIES", bold=True))
+            print("=" * line_width)
+            
+            # Invalid user summary (top N by count)
+            invalid_counts = defaultdict(int)
+            for ip, attempts in self.attempts_by_ip.items():
+                for att in attempts:
+                    if att.get('event') == 'invalid_user':
+                        invalid_counts[ip] += 1
+            if invalid_counts:
+                top_invalid = sorted(invalid_counts.items(), key=lambda x: x[1], reverse=True)[:max(1, self.summary_limit//2)]
+                print(self._color(f"Invalid user attempts (top {len(top_invalid)}):", fg='cyan', bold=True))
+                for ip, cnt in top_invalid:
+                    print(f"  {ip:<18} {cnt:>7,} events")
+            else:
+                print("No invalid user events detected.")
 
-        # Accepted password summary (top N by count)
-        accepted_counts = defaultdict(int)
-        for ip, attempts in self.attempts_by_ip.items():
-            for att in attempts:
-                if att.get('success') is True:
-                    accepted_counts[ip] += 1
-        if accepted_counts:
-            top_accepted = sorted(accepted_counts.items(), key=lambda x: x[1], reverse=True)[:max(1, self.summary_limit//2)]
-            print(self._color(f"Accepted password events (top {len(top_accepted)}):", fg='green', bold=True))
-            for ip, cnt in top_accepted:
-                print(f"  {ip:<18} {cnt:>7,} events")
-        else:
-            print("No accepted password events detected.")
+            # Accepted password summary (top N by count)
+            accepted_counts = defaultdict(int)
+            for ip, attempts in self.attempts_by_ip.items():
+                for att in attempts:
+                    if att.get('success') is True:
+                        accepted_counts[ip] += 1
+            if accepted_counts:
+                top_accepted = sorted(accepted_counts.items(), key=lambda x: x[1], reverse=True)[:max(1, self.summary_limit//2)]
+                print(self._color(f"Accepted password events (top {len(top_accepted)}):", fg='green', bold=True))
+                for ip, cnt in top_accepted:
+                    print(f"  {ip:<18} {cnt:>7,} events")
+            else:
+                print("No accepted password events detected.")
 
         # Threat summary header
         print("\n" + "=" * line_width)
         print(self._color("THREAT ANALYSIS SUMMARY", bold=True))
         print("=" * line_width)
         
+        # Filter results by severity if specified
+        severity_order = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
+        display_results = all_results
+        if filter_severity:
+            threshold = severity_order[filter_severity]
+            display_results = [r for r in all_results if severity_order[r['Severity']] <= threshold]
+        
         # Summary table header
         print(f"{'SEVERITY':<12} {'IP ADDRESS':<18} {'ATTEMPTS':<12} {'RATE':<12} {'ACTION':<12}")
         print("-" * line_width)
 
-        for i, r in enumerate(all_results):
+        for i, r in enumerate(display_results):
             sev = r['Severity']
             sev_col = {
                 'CRITICAL': ('red', True),
@@ -321,14 +332,19 @@ class BruteForceDetector:
             print(f"{sev_text:<12} {r['IP']:<18} {r['Attempts']:>12,} {rate_val:>6.2f}/min {action_text:<12}")
             # Limit summary output based on configured summary_limit
             if i >= (self.summary_limit - 1):
-                remaining = len(all_results) - self.summary_limit
+                remaining = len(display_results) - self.summary_limit
                 if remaining > 0:
                     print("-" * line_width)
-                    print(f"... and {remaining} more. Export to CSV to see all.")
+                    if not live_mode:
+                        print(f"... and {remaining} more. Export to CSV to see all.")
+                    else:
+                        print(f"... and {remaining} more.")
                 break
 
         print("=" * line_width)
-        print(f"Total suspicious IPs: {len([r for r in all_results if r['Severity'] != 'LOW']):,}")
+        # Count from display_results to reflect active filters
+        suspicious_ips = [r for r in display_results if r['Severity'] != 'LOW']
+        print(f"Total suspicious IPs: {len(suspicious_ips):,}")
         
         # Verbose mode - detailed breakdown
         if verbose:
@@ -385,6 +401,8 @@ def main():
     argp.add_argument("--live", dest="live", action="store_true", help="Follow the log file and analyze in real-time")
     argp.add_argument("--follow-start", dest="follow_start", action="store_true", help="Start live mode from the beginning of the file")
     argp.add_argument("--refresh", dest="refresh", type=float, help="Seconds between summary refresh in live mode")
+    argp.add_argument("--filter-severity", dest="filter_severity", choices=['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'], help="Only show threats at or above this severity level")
+    argp.add_argument("--compact", dest="compact", action="store_true", help="Skip event summaries, show only threat table")
     args = argp.parse_args()
     print("SSH Brute Force Log Analyzer")
     print("=" * 40)
@@ -453,6 +471,14 @@ def main():
     # Live mode: follow file and periodically refresh summary
     if args.live:
         print("\nLive mode: following log for new entries...")
+        compact_mode = bool(args.compact)
+        filter_sev = args.filter_severity
+        if filter_sev:
+            print(f"Filtering: showing only {filter_sev}+ threats")
+        if compact_mode:
+            print("Compact mode: event summaries disabled")
+        print("Tip: Use Ctrl+C to stop and see final summary\n")
+        
         refresh_interval = args.refresh if args.refresh else 5.0
         start_from_beginning = bool(args.follow_start)
         last_refresh = datetime.now()
@@ -471,12 +497,12 @@ def main():
                 detector.coverage_end = parser.stats.get('last_timestamp')
                 now = datetime.now()
                 if (now - last_refresh).total_seconds() >= refresh_interval:
-                    detector.analyze(verbose=False, export_csv=None)
+                    detector.analyze(verbose=False, export_csv=None, filter_severity=filter_sev, compact=compact_mode, live_mode=True)
                     print("\n" * 5 + "=" * 100 + "\n" * 5)
                     last_refresh = now
         except KeyboardInterrupt:
             print("\nStopping live mode. Final summary:")
-            detector.analyze(verbose=False, export_csv=None)
+            detector.analyze(verbose=False, export_csv=None, filter_severity=filter_sev, compact=compact_mode, live_mode=True)
         return
 
     # Batch mode: parse the log file
@@ -525,7 +551,10 @@ def main():
         export_csv = os.path.join(log_dir, 'brute_force_analysis.csv')
     
     t_analyze_start = datetime.now()
-    detector.analyze(verbose=verbose, export_csv=export_csv)
+    # Apply CLI filters in batch mode too
+    filter_sev = args.filter_severity if hasattr(args, 'filter_severity') else None
+    compact_mode = bool(args.compact) if hasattr(args, 'compact') else False
+    detector.analyze(verbose=verbose, export_csv=export_csv, filter_severity=filter_sev, compact=compact_mode, live_mode=False)
     t_analyze_end = datetime.now()
     analyze_elapsed = t_analyze_end - t_analyze_start
     print(f"\nAnalysis time: {analyze_elapsed.total_seconds():.2f}s")
