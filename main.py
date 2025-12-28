@@ -171,7 +171,7 @@ class BruteForceDetector:
 
         sorted_ips = sorted(summary.items(), key=lambda x: sum(x[1].values()), reverse=True)
         
-        # Pre-compute threat levels and scores for sorting
+        # Pre-compute threat levels and scores for sorting (severity, then attempts desc)
         threat_scores = {}
         severity_order = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
         
@@ -190,10 +190,10 @@ class BruteForceDetector:
                 duration = timedelta(0)
             
             threat_level = self.classify_threat(total_attempts, attack_rate, duration)
-            threat_scores[ip] = (severity_order[threat_level], threat_level, total_attempts)
+            threat_scores[ip] = (severity_order[threat_level], -total_attempts)
         
-        # Sort by: severity first, then by attempt count
-        sorted_ips = sorted(sorted_ips, key=lambda x: threat_scores[x[0]][:2])
+        # Sort by: severity first, then by attempt count (desc)
+        sorted_ips = sorted(sorted_ips, key=lambda x: threat_scores[x[0]])
         
         # Collect results for export
         results = []
@@ -306,6 +306,7 @@ class BruteForceDetector:
         if filter_severity:
             threshold = severity_order[filter_severity]
             display_results = [r for r in all_results if severity_order[r['Severity']] <= threshold]
+        hidden_count = len(all_results) - len(display_results)
         
         # Summary table header
         print(f"{'SEVERITY':<12} {'IP ADDRESS':<18} {'ATTEMPTS':<12} {'RATE':<12} {'ACTION':<12}")
@@ -342,6 +343,9 @@ class BruteForceDetector:
                 break
 
         print("=" * line_width)
+        if hidden_count > 0:
+            note = f"{hidden_count} IP(s) hidden by filter ({filter_severity}+)."
+            print(self._color(note, fg='cyan', bold=True))
         # Count from display_results to reflect active filters
         suspicious_ips = [r for r in display_results if r['Severity'] != 'LOW']
         print(f"Total suspicious IPs: {len(suspicious_ips):,}")
@@ -351,8 +355,12 @@ class BruteForceDetector:
             print("\n" + "=" * line_width)
             print(self._color(f"DETAILED BREAKDOWN (Top {self.verbose_limit})", bold=True))
             print("=" * line_width)
+            # Apply the same severity filter to verbose output
+            allowed_ips = {r['IP'] for r in display_results}
             
             for i, (ip, usernames) in enumerate(sorted_ips):
+                if ip not in allowed_ips:
+                    continue
                 if i >= self.verbose_limit:
                     break
                     
@@ -395,14 +403,20 @@ def main():
     results. Offers interactive prompts for verbosity and CSV export.
     """
     # CLI flags for non-interactive runs
-    argp = argparse.ArgumentParser(description="SSH Brute Force Log Analyzer")
+    argp = argparse.ArgumentParser(
+        description="SSH Brute Force Log Analyzer",
+        epilog="Examples:\n  python3 main.py --log-file /var/log/auth.log --live -f HIGH --compact --refresh 10\n  python3 main.py --log-file /var/log/auth.log --live --mode soc\n  python3 main.py --log-file /var/log/auth.log --live --follow-start --summary-limit 10\n  python3 main.py --log-file /var/log/auth.log --live --mode verbose\n"
+    )
     argp.add_argument("--log-file", dest="log_file", help="Path to auth/secure log file")
     argp.add_argument("--summary-limit", dest="summary_limit", type=int, help="Max rows to show in terminal summary")
     argp.add_argument("--live", dest="live", action="store_true", help="Follow the log file and analyze in real-time")
     argp.add_argument("--follow-start", dest="follow_start", action="store_true", help="Start live mode from the beginning of the file")
     argp.add_argument("--refresh", dest="refresh", type=float, help="Seconds between summary refresh in live mode")
-    argp.add_argument("--filter-severity", dest="filter_severity", choices=['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'], help="Only show threats at or above this severity level")
+    argp.add_argument("--filter-severity", "-f", dest="filter_severity", choices=['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'], help="Only show threats at or above this severity level")
     argp.add_argument("--compact", dest="compact", action="store_true", help="Skip event summaries, show only threat table")
+    argp.add_argument("--quiet", dest="quiet", action="store_true", help="Preset: HIGH+ filter, compact output, 5s refresh")
+    argp.add_argument("--noisy", dest="noisy", action="store_true", help="Preset: show everything (no filter, no compact)")
+    argp.add_argument("--mode", dest="mode", choices=['soc', 'verbose'], help="Preset: soc (HIGH+ compact fast refresh) or verbose (full detail)")
     args = argp.parse_args()
     print("SSH Brute Force Log Analyzer")
     print("=" * 40)
@@ -471,15 +485,35 @@ def main():
     # Live mode: follow file and periodically refresh summary
     if args.live:
         print("\nLive mode: following log for new entries...")
-        compact_mode = bool(args.compact)
-        filter_sev = args.filter_severity
+        # Apply presets
+        preset_filter = None
+        preset_compact = False
+        preset_refresh = None
+        if args.quiet or (args.mode == 'soc'):
+            preset_filter = 'HIGH'
+            preset_compact = True
+            preset_refresh = 5.0
+        elif args.noisy or (args.mode == 'verbose'):
+            preset_filter = None
+            preset_compact = False
+            preset_refresh = None
+
+        # Resolve effective settings (CLI overrides presets)
+        filter_sev = args.filter_severity if args.filter_severity else preset_filter
+        compact_mode = bool(args.compact or preset_compact)
+        refresh_interval = args.refresh if args.refresh else (preset_refresh if preset_refresh is not None else 5.0)
+
+        # Startup hints
         if filter_sev:
-            print(f"Filtering: showing only {filter_sev}+ threats")
+            print(f"Filtering: showing only {filter_sev}+ threats (use -f LOW for all)")
+        else:
+            print("Filtering: none (use -f HIGH to reduce noise)")
         if compact_mode:
-            print("Compact mode: event summaries disabled")
-        print("Tip: Use Ctrl+C to stop and see final summary\n")
-        
-        refresh_interval = args.refresh if args.refresh else 5.0
+            print("Compact mode: event summaries disabled (omit --compact to show them)")
+        else:
+            print("Compact mode: off (add --compact to hide event summaries)")
+        print(f"Refresh interval: {refresh_interval}s (use --refresh N to change)")
+        print("Tip: Ctrl+C stops and prints a final summary\n")
         start_from_beginning = bool(args.follow_start)
         last_refresh = datetime.now()
         try:

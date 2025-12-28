@@ -92,6 +92,8 @@ class SSHLogParser:
             Tuple of (attempts list, stats dict)
             Each attempt is (ip, username, timestamp, success)
         """
+        # Reset detection for each parse to avoid stale formats across runs
+        self.detected_format = None
         attempts = []
         # Reset stats at start, ensuring coverage keys exist
         self.stats = {
@@ -264,6 +266,10 @@ def _parse_syslog_timestamp(line: str) -> datetime:
     
     day = int(day_str)
     hour, minute, second = map(int, time_str.split(':'))
-    year = datetime.now().year
+    now = datetime.now()
+    year = now.year
+    # Handle year rollover for December/January logs
+    if month > now.month and now.month == 1:
+        year = year - 1
     
     return datetime(year, month, day, hour, minute, second)
