@@ -329,6 +329,7 @@ class BruteForceDetector:
 
         print("=" * line_width)
         print(f"Total suspicious IPs: {len([r for r in all_results if r['Severity'] != 'LOW']):,}")
+        print() * 3
         
         # Verbose mode - detailed breakdown
         if verbose:
