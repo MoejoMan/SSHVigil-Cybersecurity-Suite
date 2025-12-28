@@ -37,6 +37,38 @@ Edit `config.json` to tune behavior:
 
 On first run, a default `config.json` is created if missing.
 
+### Security Posture: SSH-Key vs Password Authentication
+
+**Default thresholds** assume mixed environments where legitimate users might occasionally mistype passwords:
+- `max_attempts: 5` - Flags IPs with 5+ failed attempts in a short window
+- `monitor_threshold: 20` - Recommends monitoring at 20+ total attempts
+- `block_threshold: 50` - Recommends blocking at 50+ total attempts
+
+**SSH-key-only servers** (password auth disabled) should use stricter rules, since *any* password attempt is suspicious:
+
+#### Option 1: Use `--strict` preset (recommended)
+```bash
+python3 main.py --log-file "/var/log/auth.log" --live --strict
+```
+This sets `max_attempts=1`, `monitor_threshold=1`, `block_threshold=5` to flag every password attempt.
+
+#### Option 2: Edit `config.json` manually
+```json
+{
+  "max_attempts": 1,
+  "time_window_minutes": 10,
+  "block_threshold": 5,
+  "monitor_threshold": 1,
+  "summary_limit": 20,
+  "verbose_limit": 10,
+  "color_enabled": true
+}
+```
+
+**Verify your SSH config** (`/etc/ssh/sshd_config`):
+- `PasswordAuthentication no` → Use `--strict`
+- `PasswordAuthentication yes` → Use defaults
+
 ## Usage
 
 Interactive run (opens a file picker if no path provided):
@@ -73,6 +105,9 @@ python3 main.py --log-file "/var/log/auth.log" --live --filter-severity HIGH --c
 Quick presets and shortcuts:
 
 ```bash
+# Strict mode for SSH-key-only servers (flags any password attempt)
+python3 main.py --log-file "/var/log/auth.log" --live --strict
+
 # Quiet SOC-style view: HIGH+ only, compact, 5s refresh
 python3 main.py --log-file "/var/log/auth.log" --live --mode soc
 

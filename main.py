@@ -416,6 +416,7 @@ def main():
     argp.add_argument("--compact", dest="compact", action="store_true", help="Skip event summaries, show only threat table")
     argp.add_argument("--quiet", dest="quiet", action="store_true", help="Preset: HIGH+ filter, compact output, 5s refresh")
     argp.add_argument("--noisy", dest="noisy", action="store_true", help="Preset: show everything (no filter, no compact)")
+    argp.add_argument("--strict", dest="strict", action="store_true", help="Preset: SSH-key-only mode (max_attempts=1, flags any password attempt)")
     argp.add_argument("--mode", dest="mode", choices=['soc', 'verbose'], help="Preset: soc (HIGH+ compact fast refresh) or verbose (full detail)")
     args = argp.parse_args()
     print("SSH Brute Force Log Analyzer")
@@ -468,11 +469,22 @@ def main():
     # Allow CLI override of summary_limit
     summary_limit_val = args.summary_limit if args.summary_limit else config["summary_limit"]
 
+    # Apply strict preset for SSH-key-only environments
+    if args.strict:
+        max_attempts_val = 1
+        monitor_threshold_val = 1
+        block_threshold_val = 5
+        print("\n⚠ Strict mode enabled (SSH-key-only): Any password attempt will be flagged")
+    else:
+        max_attempts_val = config["max_attempts"]
+        monitor_threshold_val = config["monitor_threshold"]
+        block_threshold_val = config["block_threshold"]
+
     detector = BruteForceDetector(
-        max_attempts=config["max_attempts"],
+        max_attempts=max_attempts_val,
         time_window_minutes=config["time_window_minutes"],
-        block_threshold=config["block_threshold"],
-        monitor_threshold=config["monitor_threshold"],
+        block_threshold=block_threshold_val,
+        monitor_threshold=monitor_threshold_val,
         summary_limit=summary_limit_val,
         verbose_limit=config["verbose_limit"]
     )
