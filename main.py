@@ -500,39 +500,65 @@ def main():
     if args.live or args.log_file:
         log_path = args.log_file
     else:
-        import tkinter as tk
-        from tkinter import filedialog
-        tk.Tk().withdraw()
-        log_path = filedialog.askopenfilename(
-            title="Select your auth.log file",
-            filetypes=[("Log files", "*.log"), ("All files", "*.*")]
-        )
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+            tk.Tk().withdraw()
+            log_path = filedialog.askopenfilename(
+                title="Select your auth.log file",
+                filetypes=[("Log files", "*.log"), ("All files", "*.*")]
+            )
+        except ImportError:
+            print("Error: tkinter not available for file picker.")
+            print("Please specify a log file with --log-file")
+            sys.exit(1)
+        except Exception as e:
+            print(f"Error opening file picker: {e}")
+            print("Please specify a log file with --log-file")
+            sys.exit(1)
 
     if not log_path:
         print("No file selected. Exiting.")
         sys.exit(1)
 
-    possible_paths = [
-        "/var/log/auth.log",        
-        "/var/log/secure",           
-        "auth.log",                  
-        "C:\\Users\\jhg56\\Downloads\\auth.log",  
-    ]
-
+    # Validate log path early
     if not os.path.exists(log_path):
-        log_path = None
-        for path in possible_paths:
-            if os.path.exists(path):
-                log_path = path
-                print(f"Found log file at: {log_path}")
-                confirm = input("Use this file? (y/n): ").strip().lower()
-                if confirm == 'y':
-                    break
-                log_path = None
-
-    if log_path is None:
-        print("Error: No common auth.log file found.")
-        print("Try placing it in the current folder or specify manually later.")
+        print(f"Error: Log file not found: {log_path}")
+        
+        # Offer suggestions only if no explicit path was given
+        if not args.log_file:
+            possible_paths = [
+                "/var/log/auth.log",        
+                "/var/log/secure",           
+                "auth.log",
+            ]
+            
+            print("\nSearching for common log files...")
+            found_path = None
+            for path in possible_paths:
+                if os.path.exists(path):
+                    print(f"Found log file at: {path}")
+                    confirm = input("Use this file? (y/n): ").strip().lower()
+                    if confirm == 'y':
+                        log_path = path
+                        found_path = path
+                        break
+            
+            if not found_path:
+                print("\nError: No common auth.log file found.")
+                print("Please specify the path with --log-file")
+                sys.exit(1)
+        else:
+            sys.exit(1)
+    
+    # Validate file is readable
+    if not os.path.isfile(log_path):
+        print(f"Error: Path is not a file: {log_path}")
+        sys.exit(1)
+    
+    if not os.access(log_path, os.R_OK):
+        print(f"Error: No read permission for: {log_path}")
+        print("Try running with appropriate permissions (e.g., sudo)")
         sys.exit(1)
     
     print(f"Using log file: {log_path}")
@@ -668,7 +694,20 @@ def main():
     # Batch mode: parse the log file
     print("Parsing log file...")
     t_parse_start = datetime.now()
-    attempts, stats = parser.parse_file(log_path, auto_detect=True)
+    
+    try:
+        attempts, stats = parser.parse_file(log_path, auto_detect=True)
+    except FileNotFoundError as e:
+        print(f"Error: {e}")
+        sys.exit(1)
+    except PermissionError as e:
+        print(f"Error: {e}")
+        print("Try running with appropriate permissions (e.g., sudo)")
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error parsing log file: {e}")
+        sys.exit(1)
+    
     t_parse_end = datetime.now()
     
     print(f"\nProcessing stats:")
@@ -676,13 +715,26 @@ def main():
     print(f"Format matches: {stats['format_matches']}")
     print(f"Extract matches: {stats['extract_matches']}")
     print(f"Failed timestamps: {stats['failed_timestamps']}")
+    
     if parser.get_detected_format():
         print(f"Detected format: {parser.get_detected_format()}")
     else:
-        print("Warning: Could not auto-detect log format.")
-        print("Available formats:")
+        print("⚠ Warning: Could not auto-detect log format.")
+        print("  This usually means:")
+        print("    - The log file is in an unsupported format")
+        print("    - The file is empty or corrupted")
+        print("    - SSH logs are not present in this file")
+        print("\n  Available formats:")
         for fmt in parser.list_formats():
-            print(f"  - {fmt}")
+            print(f"    - {fmt}")
+        if stats['lines_read'] == 0:
+            print("\n✗ No lines were read. File may be empty or inaccessible.")
+            sys.exit(1)
+        elif stats['format_matches'] == 0:
+            print("\n✗ No SSH authentication events found in log file.")
+            print("  Ensure this is the correct log file (e.g., /var/log/auth.log)")
+            sys.exit(1)
+    
     parse_elapsed = t_parse_end - t_parse_start
     print(f"Parse time: {parse_elapsed.total_seconds():.2f}s")
     print()

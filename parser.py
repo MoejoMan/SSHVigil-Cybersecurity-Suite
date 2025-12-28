@@ -6,6 +6,7 @@ timestamps, basic match statistics, and per-line extraction using rules
 defined in rules.py. It returns normalized attempts suitable for analysis.
 """
 import re
+import os
 from datetime import datetime
 from rules import PATTERNS
 from typing import List, Tuple, Optional
@@ -91,8 +92,29 @@ class SSHLogParser:
         Returns:
             Tuple of (attempts list, stats dict)
             Each attempt is (ip, username, timestamp, success)
-        """
-        # Reset detection for each parse to avoid stale formats across runs
+        """        # Validate file exists and is readable
+        if not os.path.exists(log_path):
+            raise FileNotFoundError(f"Log file not found: {log_path}")
+        
+        if not os.path.isfile(log_path):
+            raise ValueError(f"Path is not a file: {log_path}")
+        
+        if not os.access(log_path, os.R_OK):
+            raise PermissionError(f"No read permission for: {log_path}")
+        
+        # Check if file is empty
+        file_size = os.path.getsize(log_path)
+        if file_size == 0:
+            print(f"⚠ Warning: Log file is empty: {log_path}")
+            return [], {
+                'lines_read': 0,
+                'format_matches': 0,
+                'extract_matches': 0,
+                'failed_timestamps': 0,
+                'first_timestamp': None,
+                'last_timestamp': None
+            }
+                # Reset detection for each parse to avoid stale formats across runs
         self.detected_format = None
         attempts = []
         # Reset stats at start, ensuring coverage keys exist

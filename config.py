@@ -57,12 +57,43 @@ class Config:
             with open(config_path, 'r') as f:
                 file_config = json.load(f)
             
-            # Merge with defaults (file overrides defaults)
-            self.config.update(file_config)
+            # Validate that loaded config is a dict
+            if not isinstance(file_config, dict):
+                print(f"⚠ Invalid config format in {config_path}: expected JSON object, got {type(file_config).__name__}")
+                print(f"  Using default configuration")
+                return
+            
+            # Validate and sanitize each key
+            for key, value in file_config.items():
+                if key not in self.DEFAULTS:
+                    print(f"⚠ Unknown config key '{key}' - ignoring")
+                    continue
+                
+                # Type validation
+                expected_type = type(self.DEFAULTS[key])
+                if not isinstance(value, expected_type):
+                    print(f"⚠ Invalid type for '{key}': expected {expected_type.__name__}, got {type(value).__name__}")
+                    print(f"  Using default value: {self.DEFAULTS[key]}")
+                    continue
+                
+                # Range validation for numeric values
+                if key in ['max_attempts', 'time_window_minutes', 'summary_limit', 'verbose_limit', 'block_threshold', 'monitor_threshold']:
+                    if value < 1:
+                        print(f"⚠ Invalid value for '{key}': must be >= 1, got {value}")
+                        print(f"  Using default value: {self.DEFAULTS[key]}")
+                        continue
+                
+                # Update with validated value
+                self.config[key] = value
+            
             self.loaded_from_file = True
             print(f"✓ Loaded config from {config_path}")
+            
         except json.JSONDecodeError as e:
-            print(f"⚠ Error reading {config_path}: {e}")
+            print(f"⚠ Malformed JSON in {config_path}: {e}")
+            print(f"  Using default configuration")
+        except PermissionError:
+            print(f"⚠ Permission denied reading {config_path}")
             print(f"  Using default configuration")
         except Exception as e:
             print(f"⚠ Error loading config: {e}")
