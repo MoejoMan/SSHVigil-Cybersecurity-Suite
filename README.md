@@ -15,6 +15,8 @@ SSH Brute Force Log Analyzer that parses system authentication logs, aggregates 
 - Python 3.8+ (built-in libraries only)
 - Access to SSH auth logs (e.g., `/var/log/auth.log`, `/var/log/secure`)
 
+On Debian/Ubuntu, invoke with `python3` (the `python` shim is not installed by default; install it with `sudo apt install python-is-python3` if you prefer `python`).
+
 ## Installation
 
 1. Clone this repository
@@ -40,49 +42,49 @@ On first run, a default `config.json` is created if missing.
 Interactive run (opens a file picker if no path provided):
 
 ```bash
-python main.py
+python3 main.py
 ```
 
 Non-interactive (pass a log file and optional summary size):
 
 ```bash
-python main.py --log-file "/var/log/auth.log" --summary-limit 50
+python3 main.py --log-file "/var/log/auth.log" --summary-limit 50
 ```
 
 Live monitoring (tail the log, refresh every 5s by default):
 
 ```bash
-python main.py --log-file "/var/log/auth.log" --live --refresh 5
+python3 main.py --log-file "/var/log/auth.log" --live --refresh 5
 ```
 
 Start from top of file instead of tail:
 
 ```bash
-python main.py --log-file "/var/log/auth.log" --live --follow-start
+python3 main.py --log-file "/var/log/auth.log" --live --follow-start
 ```
 
 Reduce noise and condense output:
 
 ```bash
 # Show only HIGH+ threats and skip event summaries
-python main.py --log-file "/var/log/auth.log" --live --filter-severity HIGH --compact
+python3 main.py --log-file "/var/log/auth.log" --live --filter-severity HIGH --compact
 ```
 
 Quick presets and shortcuts:
 
 ```bash
 # Quiet SOC-style view: HIGH+ only, compact, 5s refresh
-python main.py --log-file "/var/log/auth.log" --live --mode soc
+python3 main.py --log-file "/var/log/auth.log" --live --mode soc
 
 # Verbose view: no filters, full summaries
-python main.py --log-file "/var/log/auth.log" --live --mode verbose
+python3 main.py --log-file "/var/log/auth.log" --live --mode verbose
 
 # Short flag for filter
-python main.py --log-file "/var/log/auth.log" --live -f HIGH --compact --refresh 10
+python3 main.py --log-file "/var/log/auth.log" --live -f HIGH --compact --refresh 10
 
 # Presets without modes
-python main.py --log-file "/var/log/auth.log" --live --quiet   # same as HIGH+ compact
-python main.py --log-file "/var/log/auth.log" --live --noisy   # show everything
+python3 main.py --log-file "/var/log/auth.log" --live --quiet   # same as HIGH+ compact
+python3 main.py --log-file "/var/log/auth.log" --live --noisy   # show everything
 ```
 
 Disable color output (useful for CI or plain terminals):
