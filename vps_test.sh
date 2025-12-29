@@ -182,9 +182,9 @@ fi
 # Test 5: IP validation (test with real auth.log or fallback)
 echo "[TEST 5/5] IP validation on real log..."
 TEST_LOG="test_auth.log"
-if [ -f /var/log/auth.log ]; then
+if [ -r /var/log/auth.log ]; then
     TEST_LOG="/var/log/auth.log"
-elif [ -f /var/log/secure ]; then
+elif [ -r /var/log/secure ]; then
     TEST_LOG="/var/log/secure"
 fi
 
