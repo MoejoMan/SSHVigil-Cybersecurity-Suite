@@ -211,6 +211,25 @@ class BruteForceDetector:
         # Collect results for export
         results = []
         
+        # Determine which IPs will be blocked (for display feedback)
+        blocked_ips_display = set()
+        if export_blocklist:
+            severity_threshold = severity_order[blocklist_threshold]
+            for (ip, usernames) in sorted_ips:
+                total_attempts = sum(usernames.values())
+                attempts = self.attempts_by_ip[ip]
+                if not attempts:
+                    continue
+                timestamps = [att['timestamp'] for att in attempts]
+                duration = max(timestamps) - min(timestamps)
+                total_minutes = max(duration.total_seconds() / 60, 1.0)
+                attack_rate = total_attempts / total_minutes
+                threat_level = self.classify_threat(total_attempts, attack_rate, duration)
+                
+                # Check if this IP meets blocklist criteria
+                if severity_order[threat_level] <= severity_threshold and ip not in whitelist:
+                    blocked_ips_display.add(ip)
+        
         # Compute results for all IPs (for full CSV export)
         all_results = []
         for (ip, usernames) in sorted_ips:
@@ -225,12 +244,17 @@ class BruteForceDetector:
             total_minutes = max(duration.total_seconds() / 60, 1.0)
             attack_rate = total_attempts / total_minutes
             threat_level = self.classify_threat(total_attempts, attack_rate, duration)
-            if threat_level in ["CRITICAL", "HIGH"]:
+            
+            # Determine action display
+            if ip in blocked_ips_display:
+                action = "BLOCKED"
+            elif threat_level in ["CRITICAL", "HIGH"]:
                 action = "BLOCK"
             elif threat_level == "MEDIUM":
                 action = "MONITOR"
             else:
                 action = "ALLOW"
+                
             all_results.append({
                 'IP': ip,
                 'Attempts': total_attempts,
@@ -338,11 +362,12 @@ class BruteForceDetector:
             rate_val = float(r['Attack_Rate'])
             action = r['Action']
             action_col = {
+                'BLOCKED': 'red',
                 'BLOCK': 'red',
                 'MONITOR': 'yellow',
                 'ALLOW': 'green'
             }.get(action)
-            action_text = self._color(action, fg=action_col, bold=True if action != 'ALLOW' else False)
+            action_text = self._color(action, fg=action_col, bold=True if action not in ('ALLOW',) else False)
             print(f"{sev_text:<12} {r['IP']:<18} {r['Attempts']:>12,} {rate_val:>6.2f}/min {action_text:<12}")
             # Limit summary output based on configured summary_limit
             if i >= (self.summary_limit - 1):
@@ -362,6 +387,15 @@ class BruteForceDetector:
         # Count from display_results to reflect active filters
         suspicious_ips = [r for r in display_results if r['Severity'] != 'LOW']
         print(f"Total suspicious IPs: {len(suspicious_ips):,}")
+        
+        # Show blocklist summary if blocklist export is enabled
+        if export_blocklist:
+            blocked_count = len(blocked_ips_display)
+            if blocked_count > 0:
+                blocklist_msg = f"Blocklist: {blocked_count} IP(s) marked for blocking ({blocklist_threshold}+ severity)"
+                print(self._color(blocklist_msg, fg='red', bold=True))
+            else:
+                print(self._color(f"Blocklist: No IPs meet {blocklist_threshold}+ threshold yet", fg='yellow'))
         
         # Verbose mode - detailed breakdown
         if verbose:
@@ -427,9 +461,11 @@ class BruteForceDetector:
                         for ip in new_ips:
                             f.write(f"{ip}\n")
                             self.written_ips.add(ip)
-                    print(f"Blocklist updated: {export_blocklist} (+{len(new_ips)} new IPs at {blocklist_threshold}+ severity)")
+                    total_in_blocklist = len(self.written_ips)
+                    msg = f"[OK] Blocklist updated: {export_blocklist} (+{len(new_ips)} new | {total_in_blocklist} total)"
+                    print(self._color(msg, fg='green', bold=True))
                 except Exception as e:
-                    print(f"Error updating blocklist: {e}")
+                    print(f"[ERROR] Failed to update blocklist: {e}")
             # Else: no new IPs, skip writing
         
         return all_results  
