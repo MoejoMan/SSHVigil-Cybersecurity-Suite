@@ -35,7 +35,7 @@ echo "TASK 2: BENCHMARK TEST"
 echo "=========================================="
 echo ""
 
-echo "[1/3] Generating large synthetic log file (1GB)..."
+echo "[1/3] Generating large synthetic log file (100MB)..."
 $PYTHON_CMD << 'EOFPYTHON'
 import random
 from datetime import datetime, timedelta
@@ -43,8 +43,8 @@ from datetime import datetime, timedelta
 ips = [f"192.0.2.{i}" for i in range(1, 255)]
 usernames = ["root", "admin", "ubuntu", "user", "test", "oracle", "postgres"]
 
-# Target ~1GB (adjust line count based on line size ~100 bytes)
-target_lines = 10_000_000  # ~1GB
+# Target ~100MB (adjust line count based on line size ~100 bytes)
+target_lines = 1_000_000  # ~100MB
 
 with open("large_auth.log", "w") as f:
     now = datetime.now()
