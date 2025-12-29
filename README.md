@@ -280,4 +280,6 @@ See `examples/` folder for complete config files.
 
 MIT License — See [LICENSE](LICENSE) file for details.
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 Free to use, modify, and distribute with attribution.
