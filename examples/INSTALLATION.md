@@ -1,0 +1,171 @@
+# Installation and Usage Guide for Tripwire Examples
+
+## Systemd Service (Continuous Monitoring)
+
+**Install:**
+```bash
+# Copy Tripwire to /opt
+sudo cp -r . /opt/tripwire
+
+# Create directories
+sudo mkdir -p /var/lib/tripwire
+sudo mkdir -p /etc/tripwire
+
+# Create whitelist
+sudo bash -c 'cat > /etc/tripwire/whitelist.txt << EOF
+# Add your trusted IPs here (one per line)
+127.0.0.1
+EOF'
+
+# Install service
+sudo cp examples/tripwire.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable tripwire
+sudo systemctl start tripwire
+```
+
+**Check status:**
+```bash
+sudo systemctl status tripwire
+sudo journalctl -u tripwire -f
+```
+
+**View live CSV output:**
+```bash
+tail -f /var/log/tripwire_live.csv
+```
+
+---
+
+## Cron Job (Hourly Analysis)
+
+**Install:**
+```bash
+# Make script executable
+chmod +x examples/tripwire-cron.sh
+
+# Copy to cron.hourly
+sudo cp examples/tripwire-cron.sh /etc/cron.hourly/tripwire-analysis
+
+# Or add to crontab for custom schedule
+sudo crontab -e
+# Add: 0 * * * * /opt/tripwire/examples/tripwire-cron.sh
+```
+
+**Check results:**
+```bash
+# View latest CSV
+ls -lt /var/log/tripwire/*.csv | head -1 | awk '{print $NF}' | xargs cat
+
+# View cron logs
+sudo tail -f /var/log/tripwire/tripwire.log
+```
+
+---
+
+## Fail2ban Integration
+
+**Setup:**
+```bash
+# Install fail2ban
+sudo apt install fail2ban  # Debian/Ubuntu
+sudo yum install fail2ban  # CentOS/RHEL
+
+# Copy jail config
+sudo cp examples/fail2ban-tripwire.conf /etc/fail2ban/jail.d/
+
+# Start Tripwire with blocklist export (via systemd or manually)
+sudo systemctl start tripwire
+# OR run manually:
+python3 main.py --log-file /var/log/auth.log --live \
+  --export-blocklist /var/lib/tripwire/blocklist.txt --quiet
+
+# Restart fail2ban
+sudo systemctl restart fail2ban
+```
+
+**Verify:**
+```bash
+# Check jail status
+sudo fail2ban-client status tripwire-blocklist
+
+# View banned IPs
+sudo fail2ban-client get tripwire-blocklist banned
+
+# View fail2ban logs
+sudo tail -f /var/log/fail2ban.log
+```
+
+**Unban an IP:**
+```bash
+sudo fail2ban-client set tripwire-blocklist unbanip 192.0.2.10
+```
+
+---
+
+## Combined Setup (Recommended)
+
+Run Tripwire as a systemd service + fail2ban for enforcement:
+
+```bash
+# 1. Install Tripwire service (continuous monitoring)
+sudo systemctl enable --now tripwire
+
+# 2. Install fail2ban integration (automatic banning)
+sudo cp examples/fail2ban-tripwire.conf /etc/fail2ban/jail.d/
+sudo systemctl restart fail2ban
+
+# 3. Check everything is working
+sudo systemctl status tripwire
+sudo fail2ban-client status tripwire-blocklist
+```
+
+This setup provides:
+- Real-time SSH threat monitoring (Tripwire systemd service)
+- Automated IP blocking via iptables (fail2ban)
+- Continuous CSV logging for forensics
+- Whitelist protection for trusted IPs
+
+---
+
+## Troubleshooting
+
+**Tripwire service won't start:**
+```bash
+# Check logs
+sudo journalctl -u tripwire -n 50
+
+# Verify Python path
+which python3
+
+# Test manually
+cd /opt/tripwire
+python3 main.py --log-file /var/log/auth.log --live --quiet
+```
+
+**Fail2ban not banning IPs:**
+```bash
+# Check if blocklist file exists
+ls -l /var/lib/tripwire/blocklist.txt
+
+# Verify fail2ban is reading the file
+sudo fail2ban-client get tripwire-blocklist logpath
+
+# Check fail2ban logs
+sudo tail -f /var/log/fail2ban.log
+```
+
+**Whitelist not working:**
+```bash
+# Verify whitelist file syntax (one IP per line)
+cat /etc/tripwire/whitelist.txt
+
+# Test manually
+python3 main.py --log-file /var/log/auth.log \
+  --whitelist /etc/tripwire/whitelist.txt \
+  --export-blocklist /tmp/test-blocklist.txt \
+  --non-interactive
+
+# Check if whitelisted IP is excluded
+cat /tmp/test-blocklist.txt
+```

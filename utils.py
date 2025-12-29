@@ -7,7 +7,25 @@ color helpers, CSV export), keeping this module lightweight.
 
 import os
 import time
+import ipaddress
 from typing import Iterator
+
+
+def is_valid_ip(ip_str: str) -> bool:
+    """
+    Validate if a string is a valid IPv4 or IPv6 address.
+    
+    Args:
+        ip_str: String to validate
+        
+    Returns:
+        True if valid IP, False otherwise
+    """
+    try:
+        ipaddress.ip_address(ip_str)
+        return True
+    except ValueError:
+        return False
 
 
 def follow_file(path: str, start_from_end: bool = True, poll_seconds: float = 0.5) -> Iterator[str]:

@@ -59,27 +59,27 @@ class Config:
             
             # Validate that loaded config is a dict
             if not isinstance(file_config, dict):
-                print(f"⚠ Invalid config format in {config_path}: expected JSON object, got {type(file_config).__name__}")
+                print(f"[WARNING] Invalid config format in {config_path}: expected JSON object, got {type(file_config).__name__}")
                 print(f"  Using default configuration")
                 return
             
             # Validate and sanitize each key
             for key, value in file_config.items():
                 if key not in self.DEFAULTS:
-                    print(f"⚠ Unknown config key '{key}' - ignoring")
+                    print(f"[WARNING] Unknown config key '{key}' - ignoring")
                     continue
                 
                 # Type validation
                 expected_type = type(self.DEFAULTS[key])
                 if not isinstance(value, expected_type):
-                    print(f"⚠ Invalid type for '{key}': expected {expected_type.__name__}, got {type(value).__name__}")
+                    print(f"[WARNING] Invalid type for '{key}': expected {expected_type.__name__}, got {type(value).__name__}")
                     print(f"  Using default value: {self.DEFAULTS[key]}")
                     continue
                 
                 # Range validation for numeric values
                 if key in ['max_attempts', 'time_window_minutes', 'summary_limit', 'verbose_limit', 'block_threshold', 'monitor_threshold']:
                     if value < 1:
-                        print(f"⚠ Invalid value for '{key}': must be >= 1, got {value}")
+                        print(f"[WARNING] Invalid value for '{key}': must be >= 1, got {value}")
                         print(f"  Using default value: {self.DEFAULTS[key]}")
                         continue
                 
@@ -87,16 +87,16 @@ class Config:
                 self.config[key] = value
             
             self.loaded_from_file = True
-            print(f"✓ Loaded config from {config_path}")
+            print(f"[OK] Loaded config from {config_path}")
             
         except json.JSONDecodeError as e:
-            print(f"⚠ Malformed JSON in {config_path}: {e}")
+            print(f"[WARNING] Malformed JSON in {config_path}: {e}")
             print(f"  Using default configuration")
         except PermissionError:
-            print(f"⚠ Permission denied reading {config_path}")
+            print(f"[WARNING] Permission denied reading {config_path}")
             print(f"  Using default configuration")
         except Exception as e:
-            print(f"⚠ Error loading config: {e}")
+            print(f"[WARNING] Error loading config: {e}")
             print(f"  Using default configuration")
     
     def _create_default_config(self, config_path: str):
@@ -104,9 +104,11 @@ class Config:
         try:
             with open(config_path, 'w') as f:
                 json.dump(self.DEFAULTS, f, indent=2)
-            print(f"✓ Created default config at {config_path}")
+            print(f"[OK] Created default config at {config_path}")
+            # Treat freshly written defaults as loaded so callers know config is ready
+            self.loaded_from_file = True
         except Exception as e:
-            print(f"⚠ Could not create config file: {e}")
+            print(f"[WARNING] Could not create config file: {e}")
     
     def get(self, key: str, default=None) -> Any:
         """Return the value for `key`, or `default` if the key is missing."""

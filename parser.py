@@ -105,7 +105,7 @@ class SSHLogParser:
         # Check if file is empty
         file_size = os.path.getsize(log_path)
         if file_size == 0:
-            print(f"⚠ Warning: Log file is empty: {log_path}")
+            print(f"[WARNING] Log file is empty: {log_path}")
             return [], {
                 'lines_read': 0,
                 'format_matches': 0,

@@ -10,7 +10,12 @@ SSH Brute Force Log Analyzer that parses system authentication logs, aggregates 
 - **Auto-format parsing**: Supports common syslog and journald formats; auto-detects on first match
 - **Event summaries**: Highlights invalid users and accepted login events
 - **Configurable**: Tunable thresholds via `config.json`; color output can be disabled via environment
-- **CSV export**: Export complete analysis results with timestamps and durations
+- **CSV export**: Export complete analysis results with timestamps and durations (batch and live mode)
+- **IP validation**: All extracted IPs are validated before processing
+- **IP whitelist**: Prevent self-bans and exclude trusted infrastructure from blocklists
+- **Non-interactive mode**: Run without prompts for automation (cron, systemd timers)
+- **Live monitoring**: Real-time log tailing with continuous CSV and blocklist updates
+- **Cross-platform**: Works on Windows, Linux, and macOS
 
 ## Requirements
 
@@ -122,6 +127,54 @@ python3 main.py --log-file "/var/log/auth.log" --live -f HIGH --compact --refres
 # Presets without modes
 python3 main.py --log-file "/var/log/auth.log" --live --quiet   # same as HIGH+ compact
 python3 main.py --log-file "/var/log/auth.log" --live --noisy   # show everything
+```
+
+## v1.0 New Features
+
+### Non-Interactive Mode
+Run without prompts for automation (cron jobs, systemd timers):
+
+```bash
+python3 main.py --log-file /var/log/auth.log --non-interactive --export-csv results.csv
+```
+
+### IP Whitelist
+Prevent false positives by whitelisting trusted IPs. Create a whitelist file (one IP per line, `#` for comments):
+
+**whitelist.txt:**
+```
+# Trusted infrastructure
+192.168.1.1
+10.0.0.100
+203.0.113.5
+```
+
+**Usage:**
+```bash
+python3 main.py --log-file /var/log/auth.log --whitelist whitelist.txt --export-blocklist blocklist.txt
+```
+
+### CSV Export in Live Mode
+Export live threat data continuously during real-time monitoring:
+
+```bash
+python3 main.py --log-file /var/log/auth.log --live --export-csv threats.csv --refresh 5
+```
+
+### IP Validation
+All IPs are automatically validated before processing. Invalid IPs (malformed strings, injection attempts) are silently skipped to protect blocklist integrity.
+
+### Automation Example (Cron Job)
+```bash
+# /etc/cron.hourly/tripwire-analysis
+#!/bin/bash
+python3 /opt/tripwire/main.py \
+  --log-file /var/log/auth.log \
+  --non-interactive \
+  --export-csv /var/log/tripwire_$(date +\%Y\%m\%d_\%H).csv \
+  --export-blocklist /var/lib/tripwire/blocklist.txt \
+  --whitelist /etc/tripwire/whitelist.txt \
+  --blocklist-threshold HIGH
 ```
 
 Disable color output (useful for CI or plain terminals):

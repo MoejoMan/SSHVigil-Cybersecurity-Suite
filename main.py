@@ -23,7 +23,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from parser import SSHLogParser
 from config import Config
-from utils import follow_file
+from utils import follow_file, is_valid_ip
 
 class BruteForceDetector:
     """
@@ -91,6 +91,10 @@ class BruteForceDetector:
         - success: True if authentication succeeded; False otherwise.
         - event: Optional label describing the event type (e.g., 'invalid_user').
         """
+        # Validate IP before adding
+        if not is_valid_ip(ip_address):
+            return  # Skip invalid IPs silently
+        
         self.attempts_by_ip[ip_address].append({
             "username": username,
             "timestamp": timestamp,
@@ -149,7 +153,7 @@ class BruteForceDetector:
             return f"{hours}h {minutes}m {seconds}s"
         return f"{minutes}m {seconds}s"
 
-    def analyze(self, verbose=False, export_csv=None, filter_severity=None, compact=False, live_mode=False, export_blocklist=None, blocklist_threshold='HIGH'):
+    def analyze(self, verbose=False, export_csv=None, filter_severity=None, compact=False, live_mode=False, export_blocklist=None, blocklist_threshold='HIGH', whitelist=None):
         """
         Aggregate attempts, compute severity, and render summaries.
 
@@ -161,6 +165,7 @@ class BruteForceDetector:
         - live_mode: Suppress pagination messages for continuous monitoring.
         - export_blocklist: Optional path to export IPs to blocklist file.
         - blocklist_threshold: Minimum severity for blocklist inclusion (default: HIGH).
+        - whitelist: Set of whitelisted IPs to exclude from blocklist.
 
         Returns:
         - List of dict rows with keys: IP, Attempts, Attack_Rate, Severity,
@@ -168,6 +173,7 @@ class BruteForceDetector:
         """
         THRESHOLD = self.max_attempts
         summary = defaultdict(lambda: defaultdict(int))
+        whitelist = whitelist or set()  # Default to empty set if None
 
         for ip, attempts in self.attempts_by_ip.items():
             for attempt in attempts:
@@ -408,6 +414,9 @@ class BruteForceDetector:
             threshold = severity_order[blocklist_threshold]
             blocked_ips = [r['IP'] for r in all_results if severity_order[r['Severity']] <= threshold]
             
+            # Filter out whitelisted IPs
+            blocked_ips = [ip for ip in blocked_ips if ip not in whitelist]
+            
             # Only append new IPs (not already written)
             new_ips = [ip for ip in blocked_ips if ip not in self.written_ips]
             
@@ -426,22 +435,53 @@ class BruteForceDetector:
         return all_results  
 
 def check_pid_lock(blocklist_path):
-    """Check if another analyzer instance is using this blocklist."""
+    """Check if another analyzer instance is using this blocklist (cross-platform)."""
     # Create unique lock name based on blocklist path
     lock_hash = hashlib.md5(blocklist_path.encode()).hexdigest()[:8]
-    pid_file = f"/tmp/ssh-analyzer-{lock_hash}.pid"
+    
+    # Use platform-appropriate temp directory
+    if os.name == 'nt':  # Windows
+        pid_dir = os.path.expandvars(r'%TEMP%')
+    else:  # Unix-like
+        pid_dir = '/tmp'
+    
+    pid_file = os.path.join(pid_dir, f'ssh-analyzer-{lock_hash}.pid')
     
     if os.path.exists(pid_file):
         with open(pid_file, 'r') as f:
             try:
                 pid = int(f.read().strip())
-                # Check if process is still running
-                os.kill(pid, 0)  # Doesn't kill, just checks if PID exists
-                return pid_file, pid  # Lock is active
+                # Check if process is still running (cross-platform)
+                if is_process_running(pid):
+                    return pid_file, pid  # Lock is active
+                else:
+                    # Stale lock file, clean it up
+                    os.remove(pid_file)
             except (OSError, ValueError):
                 # Stale lock file, clean it up
-                os.remove(pid_file)
+                try:
+                    os.remove(pid_file)
+                except:
+                    pass
     return pid_file, None
+
+def is_process_running(pid):
+    """Check if a process with given PID is still running (cross-platform)."""
+    if os.name == 'nt':  # Windows
+        try:
+            import psutil
+            return psutil.pid_exists(pid)
+        except ImportError:
+            # psutil not available on Windows; assume process is running to be safe
+            return True
+        except Exception:
+            return False
+    else:  # Unix-like
+        try:
+            os.kill(pid, 0)  # Signal 0: check if process exists
+            return True
+        except OSError:
+            return False
 
 def create_pid_lock(pid_file):
     """Create PID lock file."""
@@ -463,11 +503,32 @@ def load_existing_blocklist(blocklist_path):
         with open(blocklist_path, 'r') as f:
             for line in f:
                 ip = line.strip()
-                if ip:
+                if ip and is_valid_ip(ip):
                     ips.add(ip)
     except FileNotFoundError:
         pass
     return ips
+
+def load_whitelist(whitelist_path):
+    """Load whitelisted IPs from file."""
+    whitelist = set()
+    if not whitelist_path:
+        return whitelist
+    
+    try:
+        with open(whitelist_path, 'r') as f:
+            for line in f:
+                ip = line.strip()
+                # Skip comments and empty lines
+                if ip and not ip.startswith('#') and is_valid_ip(ip):
+                    whitelist.add(ip)
+        print(f"[OK] Loaded {len(whitelist)} whitelisted IPs from {whitelist_path}")
+    except FileNotFoundError:
+        print(f"[WARNING] Whitelist file not found: {whitelist_path}")
+    except Exception as e:
+        print(f"[WARNING] Error loading whitelist: {e}")
+    
+    return whitelist
 
 def main():
     """
@@ -492,6 +553,9 @@ def main():
     argp.add_argument("--mode", dest="mode", choices=['soc', 'verbose'], help="Preset: soc (HIGH+ compact fast refresh) or verbose (full detail)")
     argp.add_argument("--export-blocklist", dest="export_blocklist", help="Export IPs to blocklist file (one per line) for iptables/fail2ban")
     argp.add_argument("--blocklist-threshold", dest="blocklist_threshold", choices=['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'], default='HIGH', help="Minimum severity for blocklist (default: HIGH)")
+    argp.add_argument("--export-csv", dest="export_csv", help="Export results to CSV file (works in both live and batch mode)")
+    argp.add_argument("--non-interactive", dest="non_interactive", action="store_true", help="Suppress prompts for automation (batch mode will skip verbose/export questions)")
+    argp.add_argument("--whitelist", dest="whitelist", help="Path to whitelist file (one IP per line) to exclude from blocklist")
     args = argp.parse_args()
     print("Tripwire - SSH Brute Force Analyzer")
     print("=" * 40)
@@ -563,6 +627,9 @@ def main():
     
     print(f"Using log file: {log_path}")
     
+    # Load whitelist if specified
+    whitelist = load_whitelist(args.whitelist) if args.whitelist else set()
+    
     # Initialize config, parser and detector
     config = Config()
     parser = SSHLogParser()
@@ -574,7 +641,7 @@ def main():
         max_attempts_val = 1
         monitor_threshold_val = 1
         block_threshold_val = 5
-        print("\n⚠ Strict mode enabled (SSH-key-only): Any password attempt will be flagged")
+        print("\n[WARNING] Strict mode enabled (SSH-key-only): Any password attempt will be flagged")
     else:
         max_attempts_val = config["max_attempts"]
         monitor_threshold_val = config["monitor_threshold"]
@@ -601,7 +668,7 @@ def main():
         if args.export_blocklist:
             pid_file, existing_pid = check_pid_lock(args.export_blocklist)
             if existing_pid:
-                print(f"\n⚠ Error: Another analyzer instance (PID {existing_pid}) is already using this blocklist.")
+                print(f"\n[ERROR] Another analyzer instance (PID {existing_pid}) is already using this blocklist.")
                 print(f"   Blocklist: {args.export_blocklist}")
                 print(f"   Stop the other instance first, or use a different blocklist path.")
                 sys.exit(1)
@@ -610,7 +677,7 @@ def main():
             if os.path.exists(args.export_blocklist):
                 existing_ips = load_existing_blocklist(args.export_blocklist)
                 if existing_ips:
-                    print(f"\n⚠ Found existing blocklist with {len(existing_ips)} IPs: {args.export_blocklist}")
+                    print(f"\n[WARNING] Found existing blocklist with {len(existing_ips)} IPs: {args.export_blocklist}")
                     print("   [R]esume and append to it")
                     print("   [C]lear and start fresh")
                     print("   [A]bort")
@@ -679,12 +746,12 @@ def main():
                 detector.coverage_end = parser.stats.get('last_timestamp')
                 now = datetime.now()
                 if (now - last_refresh).total_seconds() >= refresh_interval:
-                    detector.analyze(verbose=False, export_csv=None, filter_severity=filter_sev, compact=compact_mode, live_mode=True, export_blocklist=args.export_blocklist, blocklist_threshold=args.blocklist_threshold)
+                    detector.analyze(verbose=False, export_csv=args.export_csv, filter_severity=filter_sev, compact=compact_mode, live_mode=True, export_blocklist=args.export_blocklist, blocklist_threshold=args.blocklist_threshold, whitelist=whitelist)
                     print("\n" * 5 + "=" * 100 + "\n" * 5)
                     last_refresh = now
         except KeyboardInterrupt:
             print("\nStopping live mode. Final summary:")
-            detector.analyze(verbose=False, export_csv=None, filter_severity=filter_sev, compact=compact_mode, live_mode=True, export_blocklist=args.export_blocklist, blocklist_threshold=args.blocklist_threshold)
+            detector.analyze(verbose=False, export_csv=args.export_csv, filter_severity=filter_sev, compact=compact_mode, live_mode=True, export_blocklist=args.export_blocklist, blocklist_threshold=args.blocklist_threshold, whitelist=whitelist)
         finally:
             # Clean up PID lock
             if pid_file:
@@ -719,7 +786,7 @@ def main():
     if parser.get_detected_format():
         print(f"Detected format: {parser.get_detected_format()}")
     else:
-        print("⚠ Warning: Could not auto-detect log format.")
+        print("[WARNING] Could not auto-detect log format.")
         print("  This usually means:")
         print("    - The log file is in an unsupported format")
         print("    - The file is empty or corrupted")
@@ -728,10 +795,10 @@ def main():
         for fmt in parser.list_formats():
             print(f"    - {fmt}")
         if stats['lines_read'] == 0:
-            print("\n✗ No lines were read. File may be empty or inaccessible.")
+            print("\n[ERROR] No lines were read. File may be empty or inaccessible.")
             sys.exit(1)
         elif stats['format_matches'] == 0:
-            print("\n✗ No SSH authentication events found in log file.")
+            print("\n[ERROR] No SSH authentication events found in log file.")
             print("  Ensure this is the correct log file (e.g., /var/log/auth.log)")
             sys.exit(1)
     
@@ -752,15 +819,23 @@ def main():
     detector.coverage_start = stats.get('first_timestamp')
     detector.coverage_end = stats.get('last_timestamp')
     
-    # Ask for verbosity and export
-    verbose_input = input("Show detailed breakdown? (y/n): ").strip().lower()
-    verbose = verbose_input == 'y'
-    
-    export_input = input("Export to CSV? (y/n): ").strip().lower()
-    export_csv = None
-    if export_input == 'y':
-        log_dir = os.path.dirname(log_path) or '.'
-        export_csv = os.path.join(log_dir, 'brute_force_analysis.csv')
+    # Ask for verbosity and export (skip if non-interactive)
+    if args.non_interactive:
+        verbose = False
+        export_csv = args.export_csv  # Use CLI arg if provided
+    else:
+        verbose_input = input("Show detailed breakdown? (y/n): ").strip().lower()
+        verbose = verbose_input == 'y'
+        
+        # Only prompt for CSV if not already specified via CLI
+        if args.export_csv:
+            export_csv = args.export_csv
+        else:
+            export_input = input("Export to CSV? (y/n): ").strip().lower()
+            export_csv = None
+            if export_input == 'y':
+                log_dir = os.path.dirname(log_path) or '.'
+                export_csv = os.path.join(log_dir, 'brute_force_analysis.csv')
     
     t_analyze_start = datetime.now()
     # Apply CLI filters in batch mode too
@@ -768,7 +843,7 @@ def main():
     compact_mode = bool(args.compact) if hasattr(args, 'compact') else False
     blocklist_path = args.export_blocklist if hasattr(args, 'export_blocklist') else None
     blocklist_thresh = args.blocklist_threshold if hasattr(args, 'blocklist_threshold') else 'HIGH'
-    detector.analyze(verbose=verbose, export_csv=export_csv, filter_severity=filter_sev, compact=compact_mode, live_mode=False, export_blocklist=blocklist_path, blocklist_threshold=blocklist_thresh)
+    detector.analyze(verbose=verbose, export_csv=export_csv, filter_severity=filter_sev, compact=compact_mode, live_mode=False, export_blocklist=blocklist_path, blocklist_threshold=blocklist_thresh, whitelist=whitelist)
     t_analyze_end = datetime.now()
     analyze_elapsed = t_analyze_end - t_analyze_start
     print(f"\nAnalysis time: {analyze_elapsed.total_seconds():.2f}s")
