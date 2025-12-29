@@ -1,5 +1,7 @@
 # Tripwire v1.0
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 **Production-ready SSH brute-force analyzer for small-to-medium deployments**
 
 Lightweight security threat detection and defense. Parses system authentication logs, aggregates attempts by IP, classifies threat levels, and prints a concise summary with optional detailed breakdown. Full results can be exported to CSV for forensics and automation.
@@ -279,7 +281,5 @@ See `examples/` folder for complete config files.
 ## License
 
 MIT License — See [LICENSE](LICENSE) file for details.
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 Free to use, modify, and distribute with attribution.
