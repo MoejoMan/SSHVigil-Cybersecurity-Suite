@@ -1,8 +1,8 @@
-# Tripwire
+# Tripwire v1.0
 
-**Lightweight security threat detection and defense**
+**Production-ready SSH brute-force analyzer for small-to-medium deployments**
 
-SSH Brute Force Log Analyzer that parses system authentication logs, aggregates attempts by IP, classifies threat levels, and prints a concise summary with optional detailed breakdown. Full results can be exported to CSV.
+Lightweight security threat detection and defense. Parses system authentication logs, aggregates attempts by IP, classifies threat levels, and prints a concise summary with optional detailed breakdown. Full results can be exported to CSV for forensics and automation.
 
 ## Features
 
@@ -269,12 +269,15 @@ See `examples/` folder for complete config files.
 - Supported formats are auto-detected; if detection fails, available formats are listed.
 - The parser tracks basic stats: lines read, format matches, extract matches, and timestamp coverage.
 
-## Roadmap
+## Roadmap (v2.0+)
 
 - Additional event types and heuristics
 - Enrichment (GeoIP, ASN) via optional modules
 - Batch processing and scheduling
+- Database backend for long-term analysis
 
 ## License
 
-None yet, lol
+MIT License — See [LICENSE](LICENSE) file for details.
+
+Free to use, modify, and distribute with attribution.
