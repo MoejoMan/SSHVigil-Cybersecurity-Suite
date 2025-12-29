@@ -194,9 +194,8 @@ python .\main.py --log-file "C:\\path\\to\\auth.log"
 
 ## Output
 
-![Tripwire threat analysis output showing real-time SSH brute-force detection: 12 IPs analyzed with 104 total attempts over 19 minutes. Two HIGH-severity IPs (146.190.237.126 and 36.88.28.122) marked as BLOCKED with 12 and 10 attempts respectively, while MEDIUM-severity threats are monitored and LOW-severity IPs allowed. Blocklist summary shows 2 IPs blocked at HIGH+ severity threshold.](image.png)
 
-The analyzer prints:
+![Tripwire threat analysis output showing real-time SSH brute-force detection: 12 IPs analyzed with 104 total attempts over 19 minutes. Two HIGH-severity IPs (146.190.237.126 and 36.88.28.122) marked as BLOCKED with 12 and 10 attempts respectively, while MEDIUM-severity threats are monitored and LOW-severity IPs allowed. Blocklist summary shows 2 IPs blocked at HIGH+ severity threshold.](<assets/Image of output.png>)
 
 - **Log Coverage**: Time window and total parsed attempts
 - **Event Summaries**: Top invalid user and accepted login counts by IP
