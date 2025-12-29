@@ -6,19 +6,6 @@
 
 Lightweight security threat detection and defense. Parses system authentication logs, aggregates attempts by IP, classifies threat levels, and prints a concise summary with optional detailed breakdown. Full results can be exported to CSV for forensics and automation.
 
- ________          __                          __                     
-|        \        |  \                        |  \                    
- \$$$$$$$$______   \$$  ______   __   __   __  \$$  ______    ______  
-   | $$  /      \ |  \ /      \ |  \ |  \ |  \|  \ /      \  /      \ 
-   | $$ |  $$$$$$\| $$|  $$$$$$\| $$ | $$ | $$| $$|  $$$$$$\|  $$$$$$\
-   | $$ | $$   \$$| $$| $$  | $$| $$ | $$ | $$| $$| $$   \$$| $$    $$
-   | $$ | $$      | $$| $$__/ $$| $$_/ $$_/ $$| $$| $$      | $$$$$$$$
-   | $$ | $$      | $$| $$    $$ \$$   $$   $$| $$| $$       \$$     \
-    \$$  \$$       \$$| $$$$$$$   \$$$$$\$$$$  \$$ \$$        \$$$$$$$
-                      | $$                                            
-                      | $$                                            
-                       \$$                                            
-
 ## Features
 
 - **Brute-force detection**: Classifies short-burst and persistent attacks with severity levels (CRITICAL/HIGH/MEDIUM/LOW)
