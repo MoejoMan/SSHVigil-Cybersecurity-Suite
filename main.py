@@ -619,6 +619,70 @@ def load_whitelist(whitelist_path):
     
     return whitelist
 
+
+def generate_fail2ban_script(script_path, log_path, blocklist_path, threshold, whitelist_path=None):
+        """Generate a ready-to-run fail2ban updater script and make it executable."""
+        blocklist_path = blocklist_path or "/var/lib/sshvigil/blocklist.txt"
+        app_dir = os.path.dirname(os.path.abspath(__file__))
+        python_bin = sys.executable or "/usr/bin/env python3"
+        threshold = threshold or "HIGH"
+        whitelist_path = whitelist_path or ""
+
+        script_dir = os.path.dirname(os.path.abspath(script_path))
+        if script_dir:
+                os.makedirs(script_dir, exist_ok=True)
+
+        script_template = """#!/bin/bash
+set -euo pipefail
+
+LOG_FILE=\"{log_path}\"
+BLOCKLIST=\"{blocklist}\"
+PYTHON_BIN=\"{python_bin}\"
+APP_DIR=\"{app_dir}\"
+TOP_N=5
+WHITELIST=\"{whitelist}\"
+
+mkdir -p \"$(dirname \"$BLOCKLIST\")\"
+
+if [ -n \"$WHITELIST\" ]; then
+    WHITELIST_ARG=\"--whitelist $WHITELIST\"
+else
+    WHITELIST_ARG=\"\"
+fi
+
+\"$PYTHON_BIN\" \"$APP_DIR/main.py\" \\
+    --log-file \"$LOG_FILE\" \\
+    --non-interactive \\
+    --export-blocklist \"$BLOCKLIST\" \\
+    --blocklist-threshold {threshold} \\
+    $WHITELIST_ARG
+
+head -n \"$TOP_N\" \"$BLOCKLIST\" | while read -r ip; do
+    [ -z \"$ip\" ] && continue
+    sudo fail2ban-client set sshd banip \"$ip\"
+    echo \"[$(date)] Banned $ip\"
+done
+"""
+
+        script_content = script_template.format(
+                log_path=log_path,
+                blocklist=blocklist_path,
+                python_bin=python_bin,
+                app_dir=app_dir,
+                threshold=threshold,
+                whitelist=whitelist_path,
+        )
+
+        with open(script_path, 'w', newline='\n') as f:
+                f.write(script_content)
+        try:
+                os.chmod(script_path, 0o755)
+        except Exception:
+                pass
+        print(f"[OK] Generated fail2ban helper script: {script_path}")
+        print("Run: sudo bash {script_path}  (or add to cron)".format(script_path=script_path))
+
+
 def main():
     """
     Entry point: parse CLI args, read the log file, run analysis, and print
@@ -626,8 +690,8 @@ def main():
     """
     # CLI flags for non-interactive runs
     argp = argparse.ArgumentParser(
-        description="SSHVigil - SSH Brute Force Detection & Defense",
-        epilog="Examples:\n  python3 main.py --log-file /var/log/auth.log --live -f HIGH --compact --refresh 10\n  python3 main.py --log-file /var/log/auth.log --live --mode soc\n  python3 main.py --log-file /var/log/auth.log --live --follow-start --summary-limit 10\n  python3 main.py --log-file /var/log/auth.log --live --mode verbose\n"
+    description="SSHVigil - SSH Brute Force Detection & Defense",
+    epilog="Examples:\n  python3 main.py --log-file /var/log/auth.log --live -f HIGH --compact --refresh 10\n  python3 main.py --log-file /var/log/auth.log --live --mode soc\n  python3 main.py --log-file /var/log/auth.log --live --follow-start --summary-limit 10\n  python3 main.py --log-file /var/log/auth.log --live --mode verbose\n"
     )
     argp.add_argument("--log-file", dest="log_file", help="Path to auth/secure log file")
     argp.add_argument("--summary-limit", dest="summary_limit", type=int, help="Max rows to show in terminal summary")
@@ -643,6 +707,26 @@ def main():
     argp.add_argument("--mode", dest="mode", choices=['soc', 'verbose'], help="Preset: soc (HIGH+ compact fast refresh) or verbose (full detail)")
     argp.add_argument("--export-blocklist", dest="export_blocklist", help="Export IPs to blocklist file (one per line) for iptables/fail2ban")
     argp.add_argument("--blocklist-threshold", dest="blocklist_threshold", choices=['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'], default='HIGH', help="Minimum severity for blocklist (default: HIGH)")
+    argp.add_argument("--generate-fail2ban-script", dest="generate_fail2ban_script", help="Generate a ready-to-run fail2ban updater script at this path and exit")
+    argp.add_argument("--script-blocklist-path", dest="script_blocklist_path", help="Blocklist path to embed in generated fail2ban script (default: /var/lib/sshvigil/blocklist.txt)")
+    argp.add_argument("--export-csv", dest="export_csv", help="Export results to CSV file (works in both live and batch mode)")
+    argp.add_argument("--non-interactive", dest="non_interactive", action="store_true", help="Suppress prompts for automation (batch mode will skip verbose/export questions)")
+    argp.add_argument("--whitelist", dest="whitelist", help="Path to whitelist file (one IP per line) to exclude from blocklist")
+    argp.add_argument("--summary-limit", dest="summary_limit", type=int, help="Max rows to show in terminal summary")
+    argp.add_argument("--live", dest="live", action="store_true", help="Follow the log file and analyze in real-time")
+    argp.add_argument("--follow-start", dest="follow_start", action="store_true", help="Start live mode from the beginning of the file")
+    argp.add_argument("--refresh", dest="refresh", type=float, help="Seconds between summary refresh in live mode")
+    argp.add_argument("--filter-severity", "-f", dest="filter_severity", choices=['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'], help="Only show threats at or above this severity level")
+    argp.add_argument("--verbose", dest="verbose", action="store_true", help="Show detailed event breakdown")
+    argp.add_argument("--compact", dest="compact", action="store_true", help="Skip event summaries, show only threat table")
+    argp.add_argument("--quiet", dest="quiet", action="store_true", help="Preset: HIGH+ filter, compact output, 5s refresh")
+    argp.add_argument("--noisy", dest="noisy", action="store_true", help="Preset: show everything (no filter, no compact)")
+    argp.add_argument("--strict", dest="strict", action="store_true", help="Preset: SSH-key-only mode (max_attempts=1, flags any password attempt)")
+    argp.add_argument("--mode", dest="mode", choices=['soc', 'verbose'], help="Preset: soc (HIGH+ compact fast refresh) or verbose (full detail)")
+    argp.add_argument("--export-blocklist", dest="export_blocklist", help="Export IPs to blocklist file (one per line) for iptables/fail2ban")
+    argp.add_argument("--blocklist-threshold", dest="blocklist_threshold", choices=['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'], default='HIGH', help="Minimum severity for blocklist (default: HIGH)")
+    argp.add_argument("--generate-fail2ban-script", dest="generate_fail2ban_script", help="Generate a ready-to-run fail2ban updater script at this path and exit")
+    argp.add_argument("--script-blocklist-path", dest="script_blocklist_path", help="Blocklist path to embed in generated fail2ban script (default: /var/lib/sshvigil/blocklist.txt)")
     argp.add_argument("--export-csv", dest="export_csv", help="Export results to CSV file (works in both live and batch mode)")
     argp.add_argument("--non-interactive", dest="non_interactive", action="store_true", help="Suppress prompts for automation (batch mode will skip verbose/export questions)")
     argp.add_argument("--whitelist", dest="whitelist", help="Path to whitelist file (one IP per line) to exclude from blocklist")
@@ -716,6 +800,18 @@ def main():
         sys.exit(1)
     
     print(f"Using log file: {log_path}")
+
+    # Optional: generate fail2ban helper script and exit
+    if args.generate_fail2ban_script:
+        blocklist_for_script = args.script_blocklist_path or "/var/lib/sshvigil/blocklist.txt"
+        generate_fail2ban_script(
+            script_path=args.generate_fail2ban_script,
+            log_path=log_path,
+            blocklist_path=blocklist_for_script,
+            threshold=args.blocklist_threshold,
+            whitelist_path=args.whitelist
+        )
+        sys.exit(0)
     
     # Load whitelist if specified
     whitelist = load_whitelist(args.whitelist) if args.whitelist else set()

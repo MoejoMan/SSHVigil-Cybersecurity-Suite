@@ -171,7 +171,7 @@ crontab -l
 - [x] Cron job added successfully?
 - [x] Syntax correct?
 - [x] Can be removed later: `crontab -r`?
-- [ ] **Path is correct?** (You have `/path/to/update_fail2ban.sh` but should be `/tmp/update_fail2ban.sh`)
+- [x] **Path is correct?** (Using `/tmp/update_fail2ban.sh`)
 
 ---
 
