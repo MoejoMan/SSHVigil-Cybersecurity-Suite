@@ -104,7 +104,7 @@ echo "Total IPs to block: $(wc -l < threats.txt)"
 - [x] Blocklist contains valid IPs?
 - [x] One IP per line?
 - [x] Reasonable number of IPs (not too many, not too few)?
-- [x] No localhost or trusted IPs? (Note: ::1 IPv6 localhost was in blocklist)
+- [x] No localhost or trusted IPs? (Localhost is now automatically whitelisted)
 
 ### 2.2 fail2ban Integration - Manual Block
 ```bash

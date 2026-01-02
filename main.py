@@ -252,6 +252,9 @@ class BruteForceDetector:
         # Compute results for all IPs (for full CSV export)
         all_results = []
         for (ip, usernames) in sorted_ips:
+            # SAFETY: Never surface localhost/private networks in summaries or exports
+            if is_localhost_or_private(ip):
+                continue
             total_attempts = sum(usernames.values())
             attempts = self.attempts_by_ip[ip]
             if not attempts:
@@ -326,6 +329,8 @@ class BruteForceDetector:
             # Invalid user summary (top N by count)
             invalid_counts = defaultdict(int)
             for ip, attempts in self.attempts_by_ip.items():
+                if is_localhost_or_private(ip):
+                    continue
                 for att in attempts:
                     if att.get('event') == 'invalid_user':
                         invalid_counts[ip] += 1
@@ -340,6 +345,8 @@ class BruteForceDetector:
             # Accepted password summary (top N by count)
             accepted_counts = defaultdict(int)
             for ip, attempts in self.attempts_by_ip.items():
+                if is_localhost_or_private(ip):
+                    continue
                 for att in attempts:
                     if att.get('success') is True:
                         accepted_counts[ip] += 1
