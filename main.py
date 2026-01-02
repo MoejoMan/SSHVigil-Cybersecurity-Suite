@@ -12,18 +12,34 @@ Usage:
 - Interactive: if no path is provided, a file picker will open
 - Live mode: --live flag enables real-time monitoring
 """
-import re
 import sys
 import os
 import csv
 import shutil
 import argparse
 import hashlib
+import ipaddress
 from collections import defaultdict
 from datetime import datetime, timedelta
 from parser import SSHLogParser
 from config import Config
 from utils import follow_file, is_valid_ip
+
+# Localhost whitelist - these IPs are ALWAYS excluded from blocklists for safety
+# to prevent accidental self-lockout via fail2ban integration
+LOCALHOST_WHITELIST = {
+    '127.0.0.1',      # IPv4 localhost
+    '::1',            # IPv6 localhost
+}
+
+# Private network ranges that should typically be whitelisted
+PRIVATE_NETWORK_RANGES = [
+    ipaddress.ip_network('127.0.0.0/8'),    # IPv4 loopback
+    ipaddress.ip_network('::1/128'),        # IPv6 loopback
+    ipaddress.ip_network('10.0.0.0/8'),     # Private network (common VPS internal)
+    ipaddress.ip_network('172.16.0.0/12'),  # Private network
+    ipaddress.ip_network('192.168.0.0/16'), # Private network
+]
 
 class BruteForceDetector:
     """
@@ -227,7 +243,10 @@ class BruteForceDetector:
                 threat_level = self.classify_threat(total_attempts, attack_rate, duration)
                 
                 # Check if this IP meets blocklist criteria
-                if severity_order[threat_level] <= severity_threshold and ip not in whitelist:
+                # SAFETY: Always exclude localhost and private networks from blocklists
+                if (severity_order[threat_level] <= severity_threshold 
+                    and ip not in whitelist 
+                    and not is_localhost_or_private(ip)):
                     blocked_ips_display.add(ip)
         
         # Compute results for all IPs (for full CSV export)
@@ -343,6 +362,7 @@ class BruteForceDetector:
         if filter_severity:
             threshold = severity_order[filter_severity]
             display_results = [r for r in all_results if severity_order[r['Severity']] <= threshold]
+            display_results = sorted(display_results, key=lambda x: (severity_order[x['Severity']], -int(x['Attempts'])))
         hidden_count = len(all_results) - len(display_results)
         
         # Summary table header
@@ -448,8 +468,11 @@ class BruteForceDetector:
             threshold = severity_order[blocklist_threshold]
             blocked_ips = [r['IP'] for r in all_results if severity_order[r['Severity']] <= threshold]
             
-            # Filter out whitelisted IPs
+            # Filter out whitelisted IPs (user-specified)
             blocked_ips = [ip for ip in blocked_ips if ip not in whitelist]
+            
+            # SAFETY: Filter out localhost and private networks (always excluded)
+            blocked_ips = [ip for ip in blocked_ips if not is_localhost_or_private(ip)]
             
             # Only append new IPs (not already written)
             new_ips = [ip for ip in blocked_ips if ip not in self.written_ips]
@@ -545,6 +568,29 @@ def load_existing_blocklist(blocklist_path):
         pass
     return ips
 
+def is_localhost_or_private(ip_str):
+    """
+    Check if an IP address is localhost or in a private network range.
+    These IPs should ALWAYS be excluded from blocklists for safety.
+    
+    Returns True if the IP is in the safe whitelist, False otherwise.
+    """
+    # First check exact matches
+    if ip_str in LOCALHOST_WHITELIST:
+        return True
+    
+    # Then check if IP is in any private network range
+    try:
+        ip_obj = ipaddress.ip_address(ip_str)
+        for network in PRIVATE_NETWORK_RANGES:
+            if ip_obj in network:
+                return True
+    except ValueError:
+        # Invalid IP format, don't whitelist it
+        pass
+    
+    return False
+
 def load_whitelist(whitelist_path):
     """Load whitelisted IPs from file."""
     whitelist = set()
@@ -582,6 +628,7 @@ def main():
     argp.add_argument("--follow-start", dest="follow_start", action="store_true", help="Start live mode from the beginning of the file")
     argp.add_argument("--refresh", dest="refresh", type=float, help="Seconds between summary refresh in live mode")
     argp.add_argument("--filter-severity", "-f", dest="filter_severity", choices=['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'], help="Only show threats at or above this severity level")
+    argp.add_argument("--verbose", dest="verbose", action="store_true", help="Show detailed event breakdown")
     argp.add_argument("--compact", dest="compact", action="store_true", help="Skip event summaries, show only threat table")
     argp.add_argument("--quiet", dest="quiet", action="store_true", help="Preset: HIGH+ filter, compact output, 5s refresh")
     argp.add_argument("--noisy", dest="noisy", action="store_true", help="Preset: show everything (no filter, no compact)")
@@ -860,11 +907,11 @@ def main():
     
     # Ask for verbosity and export (skip if non-interactive)
     if args.non_interactive:
-        verbose = False
+        verbose = args.verbose
         export_csv = args.export_csv  # Use CLI arg if provided
     else:
         verbose_input = input("Show detailed breakdown? (y/n): ").strip().lower()
-        verbose = verbose_input == 'y'
+        verbose = verbose_input == 'y' or args.verbose
         
         # Only prompt for CSV if not already specified via CLI
         if args.export_csv:
