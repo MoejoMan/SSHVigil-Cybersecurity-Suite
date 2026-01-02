@@ -620,6 +620,100 @@ def load_whitelist(whitelist_path):
     return whitelist
 
 
+def setup_fail2ban_integration(blocklist_path):
+    """Auto-create fail2ban jail and filter configs for SSHvigil."""
+    blocklist_path = blocklist_path or "/var/lib/sshvigil/blocklist.txt"
+    
+    jail_config = f"""[sshvigil]
+enabled = true
+backend = polling
+logpath = {blocklist_path}
+maxretry = 1
+findtime = 86400
+bantime = 604800
+filter = sshvigil
+action = iptables-multiport[name=sshvigil, port="ssh", protocol=tcp]
+"""
+    
+    filter_config = """[Definition]
+failregex = ^<HOST>$
+ignoreregex =
+"""
+    
+    try:
+        # Create jail config
+        with open('/etc/fail2ban/jail.d/sshvigil.conf', 'w') as f:
+            f.write(jail_config)
+        print("[OK] Created /etc/fail2ban/jail.d/sshvigil.conf")
+        
+        # Create filter config
+        with open('/etc/fail2ban/filter.d/sshvigil.conf', 'w') as f:
+            f.write(filter_config)
+        print("[OK] Created /etc/fail2ban/filter.d/sshvigil.conf")
+        
+        # Restart fail2ban
+        import subprocess
+        result = subprocess.run(['systemctl', 'restart', 'fail2ban'], capture_output=True)
+        if result.returncode == 0:
+            print("[OK] Restarted fail2ban service")
+            print("\nTo check status: sudo fail2ban-client status sshvigil")
+        else:
+            print(f"[WARNING] Failed to restart fail2ban: {result.stderr.decode()}")
+    except PermissionError:
+        print("[ERROR] Permission denied. Run with sudo to setup fail2ban integration.")
+        sys.exit(1)
+    except Exception as e:
+        print(f"[ERROR] Failed to setup fail2ban: {e}")
+        sys.exit(1)
+
+
+def install_systemd_service(log_path, blocklist_path, threshold, whitelist_path=None):
+    """Install SSHvigil as a systemd service for live monitoring."""
+    app_dir = os.path.dirname(os.path.abspath(__file__))
+    python_bin = sys.executable or "/usr/bin/env python3"
+    blocklist_path = blocklist_path or "/var/lib/sshvigil/blocklist.txt"
+    threshold = threshold or "HIGH"
+    whitelist_arg = f"--whitelist {whitelist_path}" if whitelist_path else ""
+    
+    service_content = f"""[Unit]
+Description=SSHvigil Live Threat Monitor
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory={app_dir}
+ExecStart={python_bin} {app_dir}/main.py --log-file {log_path} --live --refresh 5 --blocklist-threshold {threshold} --export-blocklist {blocklist_path} {whitelist_arg} --non-interactive
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+"""
+    
+    try:
+        with open('/etc/systemd/system/sshvigil.service', 'w') as f:
+            f.write(service_content)
+        print("[OK] Created /etc/systemd/system/sshvigil.service")
+        
+        import subprocess
+        subprocess.run(['systemctl', 'daemon-reload'], check=True)
+        subprocess.run(['systemctl', 'enable', 'sshvigil'], check=True)
+        subprocess.run(['systemctl', 'start', 'sshvigil'], check=True)
+        
+        print("[OK] SSHvigil service installed and started")
+        print("\nUseful commands:")
+        print("  sudo systemctl status sshvigil")
+        print("  sudo systemctl stop sshvigil")
+        print("  sudo journalctl -u sshvigil -f")
+    except PermissionError:
+        print("[ERROR] Permission denied. Run with sudo to install service.")
+        sys.exit(1)
+    except Exception as e:
+        print(f"[ERROR] Failed to install service: {e}")
+        sys.exit(1)
+
+
 def generate_fail2ban_script(script_path, log_path, blocklist_path, threshold, whitelist_path=None):
         """Generate a ready-to-run fail2ban updater script and make it executable."""
         blocklist_path = blocklist_path or "/var/lib/sshvigil/blocklist.txt"
@@ -709,6 +803,8 @@ def main():
     argp.add_argument("--blocklist-threshold", dest="blocklist_threshold", choices=['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'], default='HIGH', help="Minimum severity for blocklist (default: HIGH)")
     argp.add_argument("--generate-fail2ban-script", dest="generate_fail2ban_script", help="Generate a ready-to-run fail2ban updater script at this path and exit")
     argp.add_argument("--script-blocklist-path", dest="script_blocklist_path", help="Blocklist path to embed in generated fail2ban script (default: /var/lib/sshvigil/blocklist.txt)")
+    argp.add_argument("--setup-fail2ban", dest="setup_fail2ban", action="store_true", help="Auto-create fail2ban jail and filter configs, then restart fail2ban (requires sudo)")
+    argp.add_argument("--install-service", dest="install_service", action="store_true", help="Install SSHvigil as a systemd service for live monitoring (requires sudo)")
     argp.add_argument("--export-csv", dest="export_csv", help="Export results to CSV file (works in both live and batch mode)")
     argp.add_argument("--non-interactive", dest="non_interactive", action="store_true", help="Suppress prompts for automation (batch mode will skip verbose/export questions)")
     argp.add_argument("--whitelist", dest="whitelist", help="Path to whitelist file (one IP per line) to exclude from blocklist")
@@ -782,6 +878,23 @@ def main():
         sys.exit(1)
     
     print(f"Using log file: {log_path}")
+
+    # Optional: setup fail2ban integration and exit
+    if args.setup_fail2ban:
+        blocklist_for_setup = args.export_blocklist or "/var/lib/sshvigil/blocklist.txt"
+        setup_fail2ban_integration(blocklist_for_setup)
+        sys.exit(0)
+    
+    # Optional: install as systemd service and exit
+    if args.install_service:
+        blocklist_for_service = args.export_blocklist or "/var/lib/sshvigil/blocklist.txt"
+        install_systemd_service(
+            log_path=log_path,
+            blocklist_path=blocklist_for_service,
+            threshold=args.blocklist_threshold,
+            whitelist_path=args.whitelist
+        )
+        sys.exit(0)
 
     # Optional: generate fail2ban helper script and exit
     if args.generate_fail2ban_script:
