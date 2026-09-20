@@ -11,6 +11,8 @@
 :::::::::::::::::::::::::::::::::::...:::::::
 </pre>
 
+[![Tests](https://github.com/MoejoMan/SSHVigil-Cybersecurity-Suite/actions/workflows/tests.yml/badge.svg)](https://github.com/MoejoMan/SSHVigil-Cybersecurity-Suite/actions/workflows/tests.yml)
+
 ---
 
 # SSHVigil SSH Brute-Force Analyzer
@@ -365,6 +367,17 @@ sudo fail2ban-client status ssh-analyzer
 ```
 
 ---
+
+## Testing
+
+The suite covers the parser, detector, configuration, edge cases, security checks such as CSV formula injection and IP validation, integration flows, and a stress test.
+
+```bash
+pip install pytest
+python -m pytest -q
+```
+
+The last local run gave 84 passed and 2 skipped. The skips are symlink and file permission tests that are not reliable on Windows. GitHub Actions runs the suite on Python 3.9, 3.11, and 3.12 for every push to `main` and every pull request.
 
 ## Notes
 - Supported formats are auto-detected; if detection fails, available formats are listed.
