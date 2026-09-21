@@ -17,7 +17,7 @@
 
 # SSHVigil SSH Brute-Force Analyzer
 
-**Purpose:** SSHVigil is a lightweight, focused SSH brute-force detection and analysis tool. It is designed for users who want a simple, production-ready solution for SSH security monitoring—without the complexity or overhead of full-stack monitoring systems like Kibana or Grafana.
+**Purpose:** SSHVigil is a lightweight, focused SSH brute-force detection and analysis tool. It is designed for users who want a simple, production-ready solution for SSH security monitoring, without the complexity or overhead of full-stack monitoring systems like Kibana or Grafana.
 
 **How it fits:** SSHVigil is not a replacement for established tools like fail2ban or enterprise monitoring stacks. Instead, it enhances your existing setup by providing:
 - Out-of-the-box SSH brute-force detection and clear, actionable summaries
@@ -95,9 +95,9 @@ On first run, a default `config.json` is created if missing.
 
 ## Security Posture: SSH-Key vs Password Authentication
 **Default thresholds** assume mixed environments where legitimate users might occasionally mistype passwords:
-- `max_attempts: 5` — Flags IPs with 5+ failed attempts in a short window
-- `monitor_threshold: 20` — Recommends monitoring at 20+ total attempts
-- `block_threshold: 50` — Recommends blocking at 50+ total attempts
+- `max_attempts: 5`: Flags IPs with 5+ failed attempts in a short window
+- `monitor_threshold: 20`: Recommends monitoring at 20+ total attempts
+- `block_threshold: 50`: Recommends blocking at 50+ total attempts
 
 **SSH-key-only servers** (password auth disabled) should use stricter rules, since *any* password attempt is suspicious:
 
@@ -394,6 +394,6 @@ The last local run gave 84 passed and 2 skipped. The skips are symlink and file 
 ---
 
 ## License
-MIT License — See [LICENSE](LICENSE) file for details.
+MIT License. See [LICENSE](LICENSE) file for details.
 
 Free to use, modify, and distribute with attribution.
