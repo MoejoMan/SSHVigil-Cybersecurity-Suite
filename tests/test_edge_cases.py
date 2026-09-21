@@ -207,7 +207,9 @@ class TestParserEdgeCases:
         content = "Dec 28 10:00:00 server sshd[123]: Invalid user root from 192.168.1.1\r\n"
         content += "Dec 28 10:01:00 server sshd[124]: Failed password for admin from 192.168.1.2\n"
         content += "Dec 28 10:02:00 server sshd[125]: Invalid user test from 192.168.1.3\r"
-        log_file.write_text(content, newline='')
+        # Path.write_text(newline=...) needs Python 3.10, so write with open() for older versions.
+        with open(log_file, "w", newline="") as f:
+            f.write(content)
         parser = SSHLogParser()
         attempts, stats = parser.parse_file(str(log_file), auto_detect=True)
         assert stats["lines_read"] >= 3
