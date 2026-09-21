@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 from utils import is_valid_ip
 
 
-# Localhost whitelist — these IPs are ALWAYS excluded from blocklists for
+# Localhost whitelist: these IPs are ALWAYS excluded from blocklists for
 # safety, to prevent accidental self-lockout via fail2ban integration.
 LOCALHOST_WHITELIST = {
     '127.0.0.1',

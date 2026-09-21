@@ -6,7 +6,7 @@ Each rule provides:
 - regex: compiled pattern with named groups `username` and `ip`
 - success: whether the event indicates a successful authentication
 
-Rules are evaluated in order — more specific patterns should come first
+Rules are evaluated in order, so more specific patterns should come first
 (e.g. 'failed_password_invalid' before 'failed_password_user') to avoid
 the broader pattern consuming the match.
 
